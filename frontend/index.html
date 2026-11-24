@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#070b14" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>OmniPilot Hub — Remote AI &amp; PC Command Center</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <div class="ambient-bg" aria-hidden="true">
+    <div class="orb orb-indigo"></div>
+    <div class="orb orb-cyan"></div>
+    <div class="orb orb-violet"></div>
+  </div>
+
+  <!-- Auth Gate Overlay -->
+  <div id="auth-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <div class="glass-panel modal-card elevation-high">
+      <div class="badge-pill">Koneksi Aman</div>
+      <h2 id="auth-title">Hubungkan ke OmniPilot PC</h2>
+      <p class="muted">Masukkan API Auth Token dari file <code>.env</code> laptop Boss untuk mengunci akses jarak jauh.</p>
+      <form id="auth-form" class="stack-md">
+        <label class="field">
+          <span>API Auth Token</span>
+          <input id="auth-token-input" type="password" autocomplete="off" placeholder="omnipilot_..." required />
+        </label>
+        <label class="checkbox-row">
+          <input id="auth-lab-mode" type="checkbox" />
+          <span>Mode PC Lab / Umum (jangan simpan token setelah tab ditutup)</span>
+        </label>
+        <button type="submit" class="btn btn-primary btn-full">Masuk Command Center</button>
+      </form>
+      <p id="auth-error" class="error-text hidden"></p>
+    </div>
+  </div>
+
+  <!-- Critical Alarm Banner -->
+  <div id="critical-alarm-banner" class="critical-banner hidden" role="alert">
+    <div class="critical-banner-inner">
+      <div>
+        <span class="critical-tag">ALARM DARURAT AKTIF</span>
+        <strong id="critical-alarm-title">Timer Pengecekan HP Habis</strong>
+      </div>
+      <button id="btn-ack-all-banner" class="btn btn-danger-solid">Saya Sudah Cek HP (Matikan)</button>
+    </div>
+  </div>
+
+  <div class="app-shell">
+    <!-- Top Bar -->
+    <header class="topbar glass-panel">
+      <div class="brand">
+        <div class="brand-mark">OP</div>
+        <div>
+          <h1>OmniPilot Hub</h1>
+          <div class="status-row">
+            <span id="conn-dot" class="dot dot-offline"></span>
+            <span id="conn-label" class="muted-sm">Menghubungkan...</span>
+          </div>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button id="btn-phone-checkin" class="btn btn-ghost-cyan" title="Kirim sinyal bahwa Boss aktif mengecek HP">
+          Check-In HP
+        </button>
+        <button id="btn-open-auth" class="btn btn-ghost" title="Atur Token Koneksi">Token</button>
+        <button id="btn-logout" class="btn btn-danger" title="Keluar & hapus token dari browser (wajib saat di PC Lab Kampus)">Logout</button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs glass-panel" role="tablist">
+      <button class="tab-btn active" data-tab="overview" role="tab">Command &amp; Chat</button>
+      <button class="tab-btn" data-tab="schedule" role="tab">Jadwal &amp; Alarm</button>
+      <button class="tab-btn" data-tab="approvals" role="tab">
+        Approvals <span id="approval-badge" class="count-pill hidden">0</span>
+      </button>
+      <button class="tab-btn" data-tab="remote" role="tab">PC &amp; Layar</button>
+      <button class="tab-btn" data-tab="docs" role="tab">Dokumen</button>
+    </nav>
+
+    <!-- Main View Panels -->
+    <main class="main-content">
+      <!-- TAB 1: COMMAND & CHAT -->
+      <section id="tab-overview" class="tab-panel active">
+        <div class="grid-two">
+          <!-- Left: AI Prompt Stream -->
+          <div class="glass-panel panel-card chat-panel">
+            <div class="panel-header">
+              <div>
+                <h2>AI Remote Prompt</h2>
+                <p class="muted-sm">Kirim perintah natural atau slash command langsung ke PC Boss</p>
+              </div>
+              <span id="ai-mode-pill" class="badge-pill">Mode Lokal</span>
+            </div>
+
+            <div class="quick-chips">
+              <button class="chip" data-prompt="/jadwal">Cek Jadwal Hari Ini</button>
+              <button class="chip" data-prompt="/pc">Status PC</button>
+              <button class="chip" data-prompt="/buka antigravity">Buka Antigravity</button>
+              <button class="chip" data-prompt="/wa">Rangkum WhatsApp</button>
+              <button class="chip" data-prompt="/gmail">Cek Gmail</button>
+              <button class="chip" data-prompt="/lms">Cek LMS</button>
+            </div>
+
+            <div id="chat-feed" class="chat-feed" aria-live="polite"></div>
+
+            <form id="chat-form" class="chat-composer">
+              <input
+                id="chat-input"
+                type="text"
+                placeholder="Ketik perintah untuk PC atau /help..."
+                autocomplete="off"
+                required
+              />
+              <button type="submit" class="btn btn-primary">Kirim</button>
+            </form>
+          </div>
+
+          <!-- Right: Live Summary Cards -->
+          <div class="stack-lg">
+            <!-- PC Telemetry Card -->
+            <div class="glass-panel panel-card">
+              <div class="panel-header">
+                <h2>Status Laptop</h2>
+                <span id="pc-hostname" class="muted-sm">-</span>
+              </div>
+              <div class="metrics-grid">
+                <div class="metric-box">
+                  <span class="muted-sm">CPU</span>
+                  <strong id="metric-cpu">--%</strong>
+                </div>
+                <div class="metric-box">
+                  <span class="muted-sm">RAM</span>
+                  <strong id="metric-ram">--%</strong>
+                </div>
+                <div class="metric-box">
+                  <span class="muted-sm">Baterai</span>
+                  <strong id="metric-battery">--</strong>
+                </div>
+                <div class="metric-box">
+                  <span class="muted-sm">Cek HP Terakhir</span>
+                  <strong id="metric-phone">--</strong>
+                </div>
+              </div>
+              <div class="ip-strip">
+                <span>Tailscale: <code id="metric-tailscale">Belum aktif</code></span>
+                <span>Lokal: <code id="metric-local-ip">-</code></span>
+              </div>
+              <div class="ip-strip" style="margin-top: 6px;">
+                <span>Link Publik Internet: <code id="metric-public-url">Jalankan 3_START_CAMPUS_TUNNEL.bat</code></span>
+              </div>
+            </div>
+
+            <!-- Active Escalation Alarms Preview -->
+            <div class="glass-panel panel-card">
+              <div class="panel-header">
+                <h2>Smart Alarm Watchdog</h2>
+                <button id="btn-quick-arm" class="btn btn-sm btn-ghost-cyan">+ Timer 5m</button>
+              </div>
+              <div id="overview-alarms" class="stack-sm">
+                <p class="muted-sm">Tidak ada alarm aktif.</p>
+              </div>
+            </div>
+
+            <!-- Today's Schedule Preview -->
+            <div class="glass-panel panel-card">
+              <div class="panel-header">
+                <h2>Jadwal Hari Ini</h2>
+                <span id="today-date-label" class="muted-sm">-</span>
+              </div>
+              <div id="overview-schedules" class="stack-sm">
+                <p class="muted-sm">Belum ada agenda hari ini.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: JADWAL & SMART ALARM -->
+      <section id="tab-schedule" class="tab-panel">
+        <div class="grid-two">
+          <div class="glass-panel panel-card">
+            <div class="panel-header">
+              <h2>Tambah Jadwal Baru</h2>
+              <span class="muted-sm">Otomatis terhubung ke Smart Alarm</span>
+            </div>
+            <form id="schedule-form" class="stack-md">
+              <label class="field">
+                <span>Judul Agenda / Deadline Tugas</span>
+                <input id="sched-title" type="text" placeholder="Contoh: Kuliah Struktur Data / Submit LMS" required />
+              </label>
+              <div class="grid-two-tight">
+                <label class="field">
+                  <span>Tanggal</span>
+                  <input id="sched-date" type="date" required />
+                </label>
+                <label class="field">
+                  <span>Jam Mulai</span>
+                  <input id="sched-time" type="time" required />
+                </label>
+              </div>
+              <div class="grid-two-tight">
+                <label class="field">
+                  <span>Timer Cek HP (Menit)</span>
+                  <input id="sched-timeout" type="number" min="1" max="120" value="5" required />
+                </label>
+                <label class="field">
+                  <span>Kategori</span>
+                  <select id="sched-category">
+                    <option value="kuliah">Kuliah / Sekolah</option>
+                    <option value="tugas_lms">Tugas LMS</option>
+                    <option value="meeting">Meeting</option>
+                    <option value="general">Umum</option>
+                  </select>
+                </label>
+              </div>
+              <label class="field">
+                <span>Catatan</span>
+                <input id="sched-desc" type="text" placeholder="Link ruangan, detail tugas, dll." />
+              </label>
+              <button type="submit" class="btn btn-primary btn-full">Simpan Jadwal</button>
+            </form>
+          </div>
+
+          <div class="stack-lg">
+            <div class="glass-panel panel-card">
+              <div class="panel-header">
+                <h2>Pasang Smart Escalation Alarm</h2>
+                <span class="muted-sm">Bunyi jika tidak ada tanda cek HP</span>
+              </div>
+              <form id="alarm-form" class="stack-md">
+                <label class="field">
+                  <span>Judul Pengingat</span>
+                  <input id="alarm-title" type="text" placeholder="Contoh: Bangun / Cek Deadline LMS" required />
+                </label>
+                <div class="grid-two-tight">
+                  <label class="field">
+                    <span>Batas Waktu Cek HP (Menit)</span>
+                    <input id="alarm-timeout" type="number" min="1" max="120" value="5" required />
+                  </label>
+                  <label class="field">
+                    <span>Pesan</span>
+                    <input id="alarm-message" type="text" value="Mohon cek HP sebelum alarm darurat aktif." />
+                  </label>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full">Aktifkan Timer Watchdog</button>
+              </form>
+            </div>
+
+            <div class="glass-panel panel-card">
+              <div class="panel-header">
+                <h2>Daftar Jadwal &amp; Alarm Aktif</h2>
+                <button id="btn-ack-all-tab" class="btn btn-sm btn-ghost-cyan">Matikan Semua Alarm</button>
+              </div>
+              <div id="full-alarms-list" class="stack-sm"></div>
+              <hr class="divider" />
+              <div id="full-schedules-list" class="stack-sm"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: APPROVAL GATE -->
+      <section id="tab-approvals" class="tab-panel">
+        <div class="glass-panel panel-card">
+          <div class="panel-header">
+            <div>
+              <h2>Human-in-the-Loop Approval Gate</h2>
+              <p class="muted-sm">Semua aksi sensitif (Kirim Gmail, Balas WhatsApp, Submit LMS, Command Berisiko) menunggu izin 1-klik dari Boss.</p>
+            </div>
+            <button id="btn-refresh-approvals" class="btn btn-ghost">Refresh</button>
+          </div>
+          <div id="approvals-list" class="stack-md">
+            <p class="muted-sm">Tidak ada permintaan yang menunggu persetujuan.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: REMOTE PC & LIVE SCREEN -->
+      <section id="tab-remote" class="tab-panel">
+        <div class="grid-two">
+          <div class="glass-panel panel-card">
+            <div class="panel-header">
+              <div>
+                <h2>Live Layar &amp; Kontrol Interaktif (HP / PC Lab)</h2>
+                <p class="muted-sm">Klik langsung pada gambar layar untuk menggerakkan kursor laptop rumah tanpa install aplikasi di PC Lab.</p>
+              </div>
+              <div class="row-gap">
+                <button id="btn-refresh-screen" class="btn btn-sm btn-primary">Refresh</button>
+                <button id="btn-toggle-autoscreen" class="btn btn-sm btn-ghost">Auto: OFF</button>
+                <button id="btn-toggle-control" class="btn btn-sm btn-ghost-cyan">Klik Layar: ON</button>
+              </div>
+            </div>
+            <div class="row-gap" style="margin-bottom: 10px;">
+              <select id="mouse-click-mode" style="width: auto; padding: 6px 10px; font-size: 0.8rem;">
+                <option value="click">Mode: Klik Kiri</option>
+                <option value="double_click">Mode: Double Klik</option>
+                <option value="right_click">Mode: Klik Kanan</option>
+                <option value="move">Mode: Gerak Kursor Saja</option>
+              </select>
+              <button class="btn btn-sm btn-ghost btn-scroll" data-delta="360">Scroll Atas</button>
+              <button class="btn btn-sm btn-ghost btn-scroll" data-delta="-360">Scroll Bawah</button>
+              <button id="btn-lock-pc" class="btn btn-sm btn-danger">Kunci Layar Laptop</button>
+            </div>
+            <div id="screen-frame" class="screen-frame interactive">
+              <img id="live-screen-img" alt="Tangkapan layar laptop" />
+              <div id="click-ripple" class="click-ripple hidden"></div>
+              <div id="screen-placeholder" class="screen-placeholder">Klik "Refresh" untuk memuat tampilan laptop rumah Boss.</div>
+            </div>
+            <form id="remote-type-form" class="chat-composer" style="margin-top: 12px;">
+              <input id="remote-type-input" type="text" placeholder="Ketik teks untuk dikirim ke keyboard laptop rumah..." autocomplete="off" />
+              <button type="submit" class="btn btn-sm btn-primary">Ketik</button>
+            </form>
+            <div class="quick-chips" style="margin-top: 10px; margin-bottom: 0;">
+              <button type="button" class="chip btn-hotkey" data-hotkey="enter">Enter</button>
+              <button type="button" class="chip btn-hotkey" data-hotkey="backspace">Backspace</button>
+              <button type="button" class="chip btn-hotkey" data-hotkey="esc">Esc</button>
+              <button type="button" class="chip btn-hotkey" data-hotkey="alt+tab">Alt+Tab</button>
+              <button type="button" class="chip btn-hotkey" data-hotkey="ctrl+c">Ctrl+C</button>
+              <button type="button" class="chip btn-hotkey" data-hotkey="ctrl+v">Ctrl+V</button>
+              <button type="button" class="chip btn-hotkey" data-hotkey="ctrl+s">Ctrl+S</button>
+              <button type="button" class="chip btn-hotkey" data-hotkey="win">Win</button>
+            </div>
+          </div>
+
+          <div class="stack-lg">
+            <div class="glass-panel panel-card">
+              <div class="panel-header">
+                <h2>Kontrol Cepat Aplikasi PC</h2>
+              </div>
+              <div class="action-grid">
+                <button class="btn btn-ghost action-launch" data-app="antigravity">Buka Antigravity</button>
+                <button class="btn btn-ghost action-launch" data-app="vscode">Buka VS Code</button>
+                <button class="btn btn-ghost action-launch" data-app="chrome">Buka Chrome</button>
+                <button class="btn btn-ghost action-launch" data-app="terminal">Buka Terminal</button>
+                <button class="btn btn-ghost action-launch" data-app="explorer">Buka Workspace</button>
+                <button class="btn btn-ghost action-launch" data-app="rustdesk">Buka RustDesk</button>
+              </div>
+            </div>
+
+            <div class="glass-panel panel-card">
+              <div class="panel-header">
+                <h2>Remote Desktop Kontrol Penuh</h2>
+              </div>
+              <p class="muted-sm">Untuk menggerakkan kursor dan mengetik secara langsung dari HP maupun PC lain dengan latensi rendah:</p>
+              <div class="stack-sm">
+                <div class="info-row">
+                  <span>RustDesk ID PC</span>
+                  <code id="remote-rustdesk-id">Belum diisi di .env</code>
+                </div>
+                <div class="info-row">
+                  <span>Tailscale / Sunshine IP</span>
+                  <code id="remote-sunshine-ip">Belum terdeteksi</code>
+                </div>
+              </div>
+            </div>
+
+            <div class="glass-panel panel-card">
+              <div class="panel-header">
+                <h2>Remote PowerShell</h2>
+              </div>
+              <form id="shell-form" class="stack-md">
+                <input id="shell-input" type="text" placeholder="Contoh: git status atau Get-Date" required />
+                <button type="submit" class="btn btn-primary btn-full">Jalankan di PC</button>
+              </form>
+              <pre id="shell-output" class="code-output hidden"></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: DOCUMENT GENERATOR -->
+      <section id="tab-docs" class="tab-panel">
+        <div class="grid-two">
+          <div class="glass-panel panel-card">
+            <div class="panel-header">
+              <h2>Buat Dokumen Otomatis</h2>
+              <span class="muted-sm">DOCX, PDF, atau Markdown siap upload LMS</span>
+            </div>
+            <form id="doc-form" class="stack-md">
+              <label class="field">
+                <span>Judul Dokumen</span>
+                <input id="doc-title" type="text" placeholder="Contoh: Laporan Praktikum Sistem Operasi" required />
+              </label>
+              <div class="grid-two-tight">
+                <label class="field">
+                  <span>Subjudul / Mata Kuliah</span>
+                  <input id="doc-subtitle" type="text" placeholder="Opsional" />
+                </label>
+                <label class="field">
+                  <span>Format</span>
+                  <select id="doc-format">
+                    <option value="docx">Word (.docx)</option>
+                    <option value="pdf">PDF (.pdf)</option>
+                    <option value="md">Markdown (.md)</option>
+                  </select>
+                </label>
+              </div>
+              <label class="field">
+                <span>Judul Bagian</span>
+                <input id="doc-heading" type="text" value="Pembahasan" />
+              </label>
+              <label class="field">
+                <span>Isi Dokumen</span>
+                <textarea id="doc-content" rows="6" placeholder="Tuliskan isi atau poin materi dokumen..." required></textarea>
+              </label>
+              <button type="submit" class="btn btn-primary btn-full">Generate Dokumen</button>
+            </form>
+          </div>
+
+          <div class="glass-panel panel-card">
+            <div class="panel-header">
+              <h2>Arsip Dokumen Dihasilkan</h2>
+              <button id="btn-refresh-docs" class="btn btn-sm btn-ghost">Refresh</button>
+            </div>
+            <div id="docs-list" class="stack-sm">
+              <p class="muted-sm">Belum ada dokumen tersimpan.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

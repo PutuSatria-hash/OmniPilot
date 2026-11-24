@@ -1,0 +1,28 @@
+# Environments & Secrets (NEVER COMMIT)
+.venv/
+.env
+.env.local
+.env.*.local
+data/
+outputs/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.log
+whatsapp-bridge/node_modules/
+whatsapp-bridge/.wwebjs_auth/
+whatsapp-bridge/.wwebjs_cache/
+whatsapp-bridge/auth_info/
+whatsapp-bridge/package-lock.json
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.vscode/
